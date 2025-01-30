@@ -1,4 +1,6 @@
-export default function StopIcon(props) {
+import { SVGProps } from "react";
+
+export default function BotIcon(props: SVGProps<SVGSVGElement>) {
     return (
         <svg
             {...props}
@@ -12,8 +14,12 @@ export default function StopIcon(props) {
             strokeLinecap="round"
             strokeLinejoin="round"
         >
-            <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-            <path fill="currentColor" d="M9 9.563C9 9.252 9.252 9 9.563 9h4.874c.311 0 .563.252.563.563v4.874c0 .311-.252.563-.563.563H9.564A.562.562 0 0 1 9 14.437V9.564Z" />
+            <path d="M12 8V4H8" />
+            <rect width="16" height="12" x="4" y="8" rx="2" />
+            <path d="M2 14h2" />
+            <path d="M20 14h2" />
+            <path d="M15 13v2" />
+            <path d="M9 13v2" />
         </svg>
     )
 }

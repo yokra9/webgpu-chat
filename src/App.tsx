@@ -5,6 +5,7 @@ import ArrowRightIcon from "./components/icons/ArrowRightIcon.tsx";
 import StopIcon from "./components/icons/StopIcon.tsx";
 import Progress from "./components/Progress.tsx";
 import { Message } from "@huggingface/transformers";
+import { modelNames, dtypes, devices } from "./const.ts";
 
 // @ts-expect-error navigator.gpu is an experimental technology
 const IS_WEBGPU_AVAILABLE = !!navigator.gpu;
@@ -34,6 +35,14 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [tps, setTps] = useState(0);
   const [numTokens, setNumTokens] = useState(0);
+
+  // Added states
+  const [modelName, setModelName] = useState<(typeof modelNames)[number]>(
+    "schmuell/DeepSeek-R1-Distill-Qwen-1.5B-onnx"
+  );
+  const [dtype, setDtype] = useState<(typeof dtypes)[number]>("q4f16");
+  const [device, setDevice] = useState<(typeof devices)[number]>("webgpu");
+  const [error, setError] = useState("");
 
   function onEnter(message: string) {
     setMessages((prev) => prev?.concat({ role: "user", content: message }));
@@ -146,6 +155,10 @@ function App() {
           // Generation complete: re-enable the "Generate" button
           setIsRunning(false);
           break;
+
+        case "error":
+          // Error from worker
+          setError(e.data.error);
       }
     };
 
@@ -169,8 +182,12 @@ function App() {
       return;
     }
     setTps(0);
-    worker.current?.postMessage({ type: "generate", data: messages });
-  }, [messages]);
+    worker.current?.postMessage({
+      type: "generate",
+      data: messages,
+      config: { modelName, dtype, device },
+    });
+  }, [device, dtype, messages, modelName]);
 
   useEffect(() => {
     if (!chatContainerRef.current) return;
@@ -185,18 +202,16 @@ function App() {
     }
   }, [messages, isRunning]);
 
+  useEffect(() => {
+    document.title = `${modelName} (${dtype}) ${device}`;
+  }, [device, dtype, modelName]);
+
   return IS_WEBGPU_AVAILABLE ? (
     <div className="flex flex-col h-screen mx-auto items justify-end text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-900">
       {status == "" && messages && messages.length === 0 && (
         <div className="h-full overflow-auto scrollbar-thin flex justify-center items-center flex-col relative">
           <div className="flex flex-col items-center mb-1 max-w-[250px] text-center">
-            <img
-              src="logo.png"
-              width="100%"
-              height="auto"
-              className="block"
-            ></img>
-            <h1 className="text-4xl font-bold mb-1">Phi-3 WebGPU</h1>
+            <h1 className="text-4xl font-bold mb-1">WebNN Chat</h1>
             <h2 className="font-semibold">
               A private and powerful AI chatbot that runs locally in your
               browser.
@@ -205,21 +220,7 @@ function App() {
 
           <div className="flex flex-col items-center px-4">
             <p className="max-w-[514px] mb-4">
-              <br />
-              You are about to load{" "}
-              <a
-                href="https://huggingface.co/Xenova/Phi-3-mini-4k-instruct"
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium underline"
-              >
-                Phi-3-mini-4k-instruct
-              </a>
-              , a 3.82 billion parameter LLM that is optimized for inference on
-              the web. Once downloaded, the model (2.3&nbsp;GB) will be cached
-              and reused when you revisit the page.
-              <br />
-              <br />
+              Models will be cached and reused when you revisit the page.
               Everything runs directly in your browser using{" "}
               <a
                 href="https://huggingface.co/docs/transformers.js"
@@ -234,10 +235,69 @@ function App() {
               model has loaded!
             </p>
 
+            <label>
+              Model
+              <select
+                className="border px-4 py-2 mx-4 my-4 rounded-lg dark:bg-gray-900 dark:text-white"
+                value={modelName}
+                onChange={({ currentTarget: t }) =>
+                  (modelNames as ReadonlyArray<string>).includes(t.value) &&
+                  setModelName(t.value as (typeof modelNames)[number])
+                }
+              >
+                {modelNames.map((name) => (
+                  <option value={name} key={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <span className="">
+              <label>
+                DataType
+                <select
+                  className="border px-4 py-2 mx-4 my-4 rounded-lg dark:bg-gray-900 dark:text-white"
+                  value={dtype}
+                  onChange={({ currentTarget: t }) =>
+                    (dtypes as ReadonlyArray<string>).includes(t.value) &&
+                    setDtype(t.value as (typeof dtypes)[number])
+                  }
+                >
+                  {dtypes.map((name) => (
+                    <option value={name} key={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Device
+                <select
+                  className="border px-4 py-2 mx-4 my-4 rounded-lg dark:bg-gray-900 dark:text-white"
+                  value={device}
+                  onChange={({ currentTarget: t }) =>
+                    (devices as ReadonlyArray<string>).includes(t.value) &&
+                    setDevice(t.value as (typeof devices)[number])
+                  }
+                >
+                  {devices.map((name) => (
+                    <option value={name} key={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </span>
+
             <button
               className="border px-4 py-2 rounded-lg bg-blue-400 text-white hover:bg-blue-500 disabled:bg-blue-100 disabled:cursor-not-allowed select-none"
               onClick={() => {
-                worker.current?.postMessage({ type: "load" });
+                worker.current?.postMessage({
+                  type: "load",
+                  config: { modelName, dtype, device },
+                });
                 setStatus("loading");
               }}
               disabled={status !== ""}
@@ -250,7 +310,7 @@ function App() {
       {status === "loading" && (
         <>
           <div className="w-full max-w-[500px] text-left mx-auto p-4 bottom-0 mt-auto">
-            <p className="text-center mb-1">{loadingMessage}</p>
+            <p className="text-center whitespace-pre mb-1">{loadingMessage}</p>
             {progressItems?.map(({ file, progress, total }, i) => (
               <Progress
                 key={i}
@@ -352,6 +412,8 @@ function App() {
           </div>
         )}
       </div>
+
+      {error !== "" && <p className="text-red-400 text-center mb-3">{error}</p>}
 
       <p className="text-xs text-gray-400 text-center mb-3">
         Disclaimer: Generated content may be inaccurate or false.

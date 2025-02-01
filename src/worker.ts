@@ -10,7 +10,13 @@ import {
   StoppingCriteriaList,
   Tensor
 } from "@huggingface/transformers";
+import { modelNames, dtypes, devices } from "./const.ts";
 
+type Config = {
+  modelName: (typeof modelNames)[number];
+  dtype: (typeof dtypes)[number];
+  device: (typeof devices)[number];
+}
 
 class CallbackTextStreamer extends TextStreamer {
   cb: (text: string) => void;
@@ -51,15 +57,6 @@ class InterruptableStoppingCriteria extends StoppingCriteriaList {
 
 const stopping_criteria = new InterruptableStoppingCriteria();
 
-async function hasFp16() {
-  try {
-    // @ts-expect-error navigator.gpu is an experimental technology
-    const adapter = await navigator.gpu.requestAdapter();
-    return adapter.features.has("shader-f16");
-  } catch (_) {
-    return false;
-  }
-}
 
 /**
  * This class uses the Singleton pattern to ensure that only one instance of the model is loaded.
@@ -71,11 +68,9 @@ class TextGenerationPipeline {
   static tokenizer: Promise<PreTrainedTokenizer>;
   static streamer = null;
 
-  static async getInstance(progress_callback?: ProgressCallback) {
-    // Choose the model based on whether fp16 is available
-    this.model_id ??= await hasFp16()
-      ? "Xenova/Phi-3-mini-4k-instruct_fp16"
-      : "Xenova/Phi-3-mini-4k-instruct";
+  static async getInstance(config: Config, progress_callback?: ProgressCallback) {
+
+    this.model_id = config.modelName;
 
     this.tokenizer ??= AutoTokenizer.from_pretrained(
       this.model_id,
@@ -88,8 +83,8 @@ class TextGenerationPipeline {
     this.model ??= AutoModelForCausalLM.from_pretrained(
       this.model_id,
       {
-        dtype: "q4",
-        device: "webgpu",
+        dtype: config.dtype,
+        device: config.device,
         use_external_data_format: true,
         progress_callback
       }
@@ -102,12 +97,12 @@ class TextGenerationPipeline {
   }
 }
 
-async function generate(messages: Message[]) {
+async function generate(messages: Message[], config: Config) {
   // Retrieve the text-generation pipeline.
   const [
     tokenizer,
     model
-  ] = await TextGenerationPipeline.getInstance();
+  ] = await TextGenerationPipeline.getInstance(config);
 
   const inputs = tokenizer.apply_chat_template(
     messages,
@@ -168,18 +163,18 @@ async function generate(messages: Message[]) {
 
 }
 
-async function load() {
+async function load(config: Config) {
 
   self.postMessage({
     status: "loading",
-    data: "Loading model..."
+    data: `Loading model...\n${config.modelName} (${config.dtype}) ${config.device}`
   });
 
   // Load the pipeline and save it for future use.
   const [
     tokenizer,
     model
-  ] = await TextGenerationPipeline.getInstance((x) => {
+  ] = await TextGenerationPipeline.getInstance(config, (x) => {
 
     /*
      * We also add a progress callback to the pipeline so that we can
@@ -206,25 +201,29 @@ async function load() {
 self.addEventListener(
   "message",
   async (e) => {
-    const { type, data } = e.data;
+    const { type, data, config } = e.data;
+    try {
+      switch (type) {
+        case "load":
+          load(config as Config);
+          break;
 
-    switch (type) {
-      case "load":
-        load();
-        break;
+        case "generate":
+          stopping_criteria.reset();
+          generate(data, config);
+          break;
 
-      case "generate":
-        stopping_criteria.reset();
-        generate(data);
-        break;
+        case "interrupt":
+          stopping_criteria.interrupt();
+          break;
 
-      case "interrupt":
-        stopping_criteria.interrupt();
-        break;
+        case "reset":
+          stopping_criteria.reset();
+          break;
+      }
 
-      case "reset":
-        stopping_criteria.reset();
-        break;
+    } catch (error) {
+      self.postMessage({ "status": "error", error: String(error) });
     }
   }
 );

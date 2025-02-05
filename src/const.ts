@@ -2,6 +2,7 @@ export const modelNames = [
     "onnx-community/DeepSeek-R1-Distill-Qwen-1.5B-ONNX", // fp16
     "onnx-community/Llama-3.2-3B-Instruct-onnx-web", // q4f16
     "onnx-community/Phi-3.5-mini-instruct-onnx-web", //q4f16
+    "onnx-community/TinySwallow-1.5B-Instruct-ONNX", // q4f16
     "Xenova/Phi-3-mini-4k-instruct_fp16", // q4
     "Xenova/Phi-3-mini-4k-instruct", // q4
     "schmuell/DeepSeek-R1-Distill-Qwen-1.5B-onnx", // q4f16
